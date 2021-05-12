@@ -24,14 +24,21 @@ Inductive DOORS : interface :=
 | IsOpen : door -> DOORS bool
 | Toggle : door -> DOORS unit.
 
-Generalizable All Variables.
+Generalizable All Variables. (* Permet de ne pas introduire les variables
+dont Coq peut deviner le type *)
+
+
 
 Definition is_open `{Provide ix DOORS} (d : door) : impure ix bool :=
   request (IsOpen d).
 
+Print is_open. (*ix est un implicite *)
+
 Definition toggle `{Provide ix DOORS} (d : door) : impure ix unit :=
   request (Toggle d).
 
+
+(* let* = sucre syntaxique pour le bind *)
 Definition open_door `{Provide ix DOORS} (d : door) : impure ix unit :=
   let* open := is_open d in
   when (negb open) (toggle d).
@@ -45,6 +52,8 @@ Definition close_door `{Provide ix DOORS} (d : door) : impure ix unit :=
 Inductive CONTROLLER : interface :=
 | Tick : CONTROLLER unit
 | RequestOpen (d : door) : CONTROLLER unit.
+
+Print request.
 
 Definition tick `{Provide ix CONTROLLER} : impure ix unit :=
   request Tick.
@@ -175,7 +184,7 @@ Lemma close_door_respectful `{Provide ix DOORS} (ω : Ω) (d : door)
 Proof.
   (* We use the [prove_program] tactics to erase the program monad *)
 
-  prove impure with airlock; subst; constructor.
+  prove impure with airlock; subst; constructor. (* TODO *)
 
   (* This leaves us with one goal to prove:
 
@@ -208,11 +217,12 @@ Lemma close_door_run `{Provide ix DOORS} (ω : Ω) (d : door) (ω' : Ω) (x : un
   : sel d ω' = false.
 
 Proof.
-  unroll_post run.
+  unroll_post run. (* unroll_post -> tous les chemins d'exécution possibles pour arriver à la conclusion
+et retrouve les callee obligations que l'on a à ce moment *)
   + rewrite tog_equ_1.
     inversion H1; ssubst.
     now rewrite H5.
-  + now inversion H1; ssubst.
+  + now inversion H1; ssubst. (* note: ici on peut faire clear H0. clear H. *)
 Qed.
 
 #[global] Hint Resolve close_door_run : airlock.
@@ -318,7 +328,7 @@ Lemma controller_correct `{StrictProvide2 ix DOORS (STORE nat)}
 Proof.
   intros ωc ωd pred a e req.
   assert (hpre : pre (to_hoare doors_contract (controller a e)) ωd)
-    by (destruct e; prove impure with airlock).
+    by (destruct e; prove impure with airlock). (* TODO *)
   split; auto.
   intros x ωj' run.
   cbn.
