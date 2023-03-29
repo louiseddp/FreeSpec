@@ -6,6 +6,9 @@
 
 From Coq Require Import Arith.
 From FreeSpec.Core Require Import Core CoreFacts.
+Add Rec LoadPath "/home/louise/github.com/louiseddp/sniper" as Sniper.
+From Sniper Require Import Sniper.
+From Hammer Require Import Hammer.
 
 #[local] Open Scope nat_scope.
 
@@ -83,6 +86,7 @@ Definition controller `{Provide ix DOORS, Provide ix (STORE nat)}
         open_door d;;
         put 0
     end.
+Print "+".
 
 (** * Verifying the Airlock Controller *)
 
@@ -151,6 +155,22 @@ Inductive doors_o_caller : Ω -> forall (a : Type), DOORS a -> Prop :=
 | req_toggle (d : door) (ω : Ω) (H : sel d ω = false -> sel (co d) ω = false)
   : doors_o_caller ω unit (Toggle d).
 
+Lemma doors_o_caller_inversion : 
+forall ω (a : Type) (d: DOORS a) (H : doors_o_caller ω a d), 
+(exists (d0 : door) (ω0 : Ω),  
+ω0 = ω /\ @eq Type bool a /\ 
+existT (fun x : Type => DOORS x) bool (IsOpen d0)
+= existT (fun x : Type => DOORS x) a d)
+\/ (exists (d0 : door) (ω0 : Ω) (H : sel d0 ω0 = false -> sel (co d0) ω0 = false),  
+ω0 = ω /\ @eq Type unit a /\
+existT (fun x : Type => DOORS x) unit (Toggle d0)
+= existT (fun x : Type => DOORS x) a d).
+Proof. intros. inversion H. left.
+exists d0. exists ω0. split. assumption. split. reflexivity.
+reflexivity. right.
+exists d0. exists ω. exists H3. split. reflexivity. split. reflexivity.
+reflexivity. Qed.
+
 #[global] Hint Constructors doors_o_caller : airlock.
 
 (** *** Promises *)
@@ -169,6 +189,22 @@ Inductive doors_o_callee : Ω -> forall (a : Type), DOORS a -> a -> Prop :=
 | doors_o_callee_toggle (d : door) (ω : Ω) (x : unit)
   : doors_o_callee ω unit (Toggle d) x.
 
+Lemma doors_o_callee_inversion : 
+forall ω (a : Type) (d: DOORS a) (x : a) (H : doors_o_callee ω a d x), 
+(exists (d0 : door) (ω0 : Ω) (x: bool) (equ : sel d0 ω0 = x),  
+ω0 = ω /\ @eq Type bool a /\ 
+existT (fun x : Type => DOORS x) bool (IsOpen d0)
+= existT (fun x : Type => DOORS x) a d) 
+\/ (exists (d0 : door) (ω0 : Ω) (x : unit),  
+ω0 = ω /\ @eq Type unit a /\
+existT (fun x : Type => DOORS x) unit (Toggle d0)
+= existT (fun x : Type => DOORS x) a d).
+Proof. intros. inversion H. left.
+exists d0. exists ω. exists x0. exists equ. split. reflexivity. split. 
+assumption. assumption.
+right.
+exists d0. exists ω. exists x0. split. reflexivity. split. assumption. assumption. Qed.
+
 #[global] Hint Constructors doors_o_callee : airlock.
 
 Definition doors_contract : contract DOORS Ω :=
@@ -184,7 +220,12 @@ Lemma close_door_respectful `{Provide ix DOORS} (ω : Ω) (d : door)
 Proof.
   (* We use the [prove_program] tactics to erase the program monad *)
 
-  prove impure with airlock; subst; constructor. (* TODO *)
+  prove impure. 
+
+ (* sauto.
+inversion o_caller. subst. inversion o_caller0. subst. constructor.
+apply Eqdep.EqdepTheory.inj_pair2 in H3. sauto. *)
+Qed. (* TODO *)
 
   (* This leaves us with one goal to prove:
 
@@ -194,8 +235,8 @@ Proof.
 
        [sel d ω = true] *)
 
-  inversion o_caller0; ssubst.
-  now rewrite H3.
+  inversion o_caller0. ssubst.
+  now rewrite H1.
 Qed.
 
 #[global] Hint Resolve close_door_respectful : airlock.
@@ -217,7 +258,7 @@ Lemma close_door_run `{Provide ix DOORS} (ω : Ω) (d : door) (ω' : Ω) (x : un
   : sel d ω' = false.
 
 Proof.
-  unroll_post run. (* unroll_post -> tous les chemins d'exécution possibles pour arriver à la conclusion
+  unroll_post run. Show 2. (* unroll_post -> tous les chemins d'exécution possibles pour arriver à la conclusion
 et retrouve les callee obligations que l'on a à ce moment *)
   + rewrite tog_equ_1.
     inversion H1; ssubst.
@@ -319,6 +360,32 @@ Qed.
 
 (** ** Main Theorem *)
 
+Print MayProvide.
+Check StrictProvide2.
+Check Distinguish.
+Print STORE.
+Print interface.
+Check contract.
+Print correct_component.
+Print component.
+Check no_contract.
+Check doors_contract.
+Print CONTROLLER.
+Set Printing All.
+Check controller.
+
+Print Scopes.
+Print iplus.
+
+Print pre.
+Print impure.
+Print hoare.
+Print to_hoare.
+Print impure.
+Print open_door.
+
+Set Printing All.
+
 Lemma controller_correct `{StrictProvide2 ix DOORS (STORE nat)}
   : correct_component controller
                       (no_contract CONTROLLER)
@@ -327,8 +394,13 @@ Lemma controller_correct `{StrictProvide2 ix DOORS (STORE nat)}
 
 Proof.
   intros ωc ωd pred a e req.
-  assert (hpre : pre (to_hoare doors_contract (controller a e)) ωd)
-    by (destruct e; prove impure with airlock). (* TODO *)
+  assert (hpre : pre (to_hoare doors_contract (controller a e)) ωd).
+    (destruct e; prove impure). 
+
+
+Focus 5.  Set Printing All. Check @controller. Check component. Check @to_hoare.
+ Check caller_obligation.
+with airlock). (* TODO *)
   split; auto.
   intros x ωj' run.
   cbn.
@@ -336,3 +408,5 @@ Proof.
   + auto with freespec.
   + apply respectful_run_inv in run; auto.
 Qed.
+
+Check @controller_correct.
