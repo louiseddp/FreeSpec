@@ -10,6 +10,8 @@ Add Rec LoadPath "/home/louise/github.com/louiseddp/sniper" as Sniper.
 From Sniper Require Import Sniper.
 From Hammer Require Import Hammer.
 
+Require Import Coq.Program.Equality.
+
 #[local] Open Scope nat_scope.
 
 Create HintDb airlock.
@@ -26,6 +28,14 @@ Definition door_eq_dec (d d' : door) : { d = d' } + { ~ d = d' } :=
 Inductive DOORS : interface :=
 | IsOpen : door -> DOORS bool
 | Toggle : door -> DOORS unit.
+
+Inductive DOORS' : Type :=
+| IsOpen' b (d : door) : b = true -> DOORS'
+| Toggle' b (d : door) : b = false -> DOORS'.
+
+Inductive DOORS'' : bool -> Type :=
+| IsOpen'' (d : door) : DOORS'' true
+| Toggle'' (d : door) : DOORS'' false.
 
 Generalizable All Variables. (* Permet de ne pas introduire les variables
 dont Coq peut deviner le type *)
@@ -155,6 +165,62 @@ Inductive doors_o_caller : Ω -> forall (a : Type), DOORS a -> Prop :=
 | req_toggle (d : door) (ω : Ω) (H : sel d ω = false -> sel (co d) ω = false)
   : doors_o_caller ω unit (Toggle d).
 
+Inductive doors_o_caller' : Ω -> DOORS' -> Prop :=
+
+(** - Given the door [d] of o system [ω], it is always possible to ask for the
+      state of [d]. *)
+
+| req_is_open' (d : door) (ω : Ω)
+  : doors_o_caller' ω (IsOpen' true d eq_refl)
+
+(** - Given the door [d] of o system [ω], if [d] is closed, then the second door
+      [co d] has to be closed too for a request to toggle [d] to be valid. *)
+
+| req_toggle' (d : door) (ω : Ω) (H : sel d ω = false -> sel (co d) ω = false)
+  : doors_o_caller' ω (Toggle' false d eq_refl).
+
+Print implb.
+
+Definition doors_o_caller_dec (ω : Ω) (d : DOORS') : bool := 
+match d with
+| IsOpen' b d H => match b with
+                    | true => true
+                    | false => false
+                    end
+| Toggle' b d H => match b with
+                    | true => if true then false else false
+                    | false => if negb (sel d ω) then (negb (sel (co d) ω)) else true
+                    end
+end.
+
+Definition transfo {A : Type} (t: DOORS A) :=
+match t with
+| IsOpen d => IsOpen' true d eq_refl
+| Toggle d => Toggle' false d eq_refl
+end.
+
+Lemma equivalence A (ω : Ω) (d : DOORS A) :
+doors_o_caller ω A d <-> doors_o_caller' ω (transfo d).
+Proof. split.
+  + intro H. destruct d.
+      - simpl. constructor.
+      - simpl. constructor. inversion H. apply H2.
+  + intro H. destruct d.
+      - simpl in H. constructor.
+      - simpl in H. constructor. inversion H. apply H2. Qed.
+
+Lemma caller_dec ω d : doors_o_caller' ω d <-> doors_o_caller_dec ω d = true.
+Proof.
+split; intro H; destruct d.
+  - simpl. dependent destruction e. reflexivity.
+  - simpl. dependent destruction e. inversion H. destruct (sel d ω) eqn:E.
+simpl. reflexivity. simpl. destruct ((sel (co d) ω)). firstorder. firstorder.
+  - subst. constructor.
+  - subst. constructor. simpl in H.  intros. destruct (negb (sel d ω)) eqn:E.
+    + rewrite <- Bool.negb_involutive in H. simpl in H. 
+generalize dependent (sel (co d) ω). intros. sauto lq:on.
+    + generalize dependent (sel d ω). intros. sauto lq:on. Qed.
+
 Lemma doors_o_caller_inversion : 
 forall ω (a : Type) (d: DOORS a) (H : doors_o_caller ω a d), 
 (exists (d0 : door) (ω0 : Ω),  
@@ -189,6 +255,60 @@ Inductive doors_o_callee : Ω -> forall (a : Type), DOORS a -> a -> Prop :=
 | doors_o_callee_toggle (d : door) (ω : Ω) (x : unit)
   : doors_o_callee ω unit (Toggle d) x.
 
+Inductive doors_o_callee' : Ω -> DOORS' -> (bool*unit) -> Prop :=
+| doors_o_callee_is_open' (d : door) (ω : Ω) (y : bool*unit) (x : bool) (H : x = true) (equ : sel d ω = fst y)
+  : doors_o_callee' ω (IsOpen' true d eq_refl) y
+| doors_o_callee_toggle' (d : door) (ω : Ω) (y : bool*unit) (x : bool) (H : x = false)
+  : doors_o_callee' ω (Toggle' false d eq_refl) y.
+
+Definition doors_o_callee'_dec (ω : Ω) (d : DOORS') (p : bool*unit) : bool := 
+match d with
+| IsOpen' b d H => match p with
+                   | (true, false) => 
+| Toggle' b d H => match b with
+                    | true => if true then false else false
+                    | false => if negb (sel d ω) then (negb (sel (co d) ω)) else true
+                    end
+end.
+
+Definition transfo_hyp {A : Type} (H: A = bool) :=
+match H with
+| eq_refl => bool
+end. 
+
+Lemma two_elem : ~ (@eq Type unit bool).
+Proof.
+intro Helim.
+assert (H : forall (x : unit), x = tt).
+intro. destruct x. reflexivity.
+assert (H1 : forall (x : bool), x = true \/ x = false).
+intro. destruct x; auto.
+assert (H2 : true <> false).
+intro Helim2. inversion Helim2.
+assert (H3 : forall (x y : bool), x = y).
+intros x y. Admitted. 
+
+Lemma equivalence' (b : bool) (c: unit) (ω : Ω) :
+(forall (d : DOORS bool), doors_o_callee ω bool d b <-> doors_o_callee' ω (transfo d) (b, c))
+/\ 
+(forall (d : DOORS unit), doors_o_callee ω unit d c <-> doors_o_callee' ω (transfo d) (b, c)).
+Proof. split. split.
+  + dependent destruction d.
+      - simpl. intros. inversion H. ssubst. econstructor 1. reflexivity. simpl.
+apply Eqdep.EqdepTheory.inj_pair2 in H2. assumption.
+      - intros. inversion H. assert (Hfalse : False). apply two_elem. assumption.  inversion Hfalse.
+assert (Hfalse : False). apply two_elem. assumption.  inversion Hfalse.
+  +  dependent destruction d.
+    - intro H. inversion H. subst. constructor. simpl in equ. assumption.
+    - assert (Hfalse : False). apply two_elem. assumption. inversion Hfalse.
+  + split. dependent destruction d; intro H; simpl in *.
+    * 
+assert (Hfalse : False). apply two_elem. symmetry. assumption. inversion Hfalse.
+    * econstructor. reflexivity.  
+    * intro H. dependent destruction d. assert (Hfalse : False). apply two_elem. symmetry. assumption. inversion Hfalse.
+    simpl in H. inversion H. subst. constructor. 
+  Qed.
+
 Lemma doors_o_callee_inversion : 
 forall ω (a : Type) (d: DOORS a) (x : a) (H : doors_o_callee ω a d x), 
 (exists (d0 : door) (ω0 : Ω) (x: bool) (equ : sel d0 ω0 = x),  
@@ -219,25 +339,12 @@ Lemma close_door_respectful `{Provide ix DOORS} (ω : Ω) (d : door)
 
 Proof.
   (* We use the [prove_program] tactics to erase the program monad *)
+prove impure. 
+sauto. apply equivalence. econstructor. exact d. exact (eq_refl).
+apply equivalence in o_caller. pose proof (p := equivalence').
+edestruct p. rewrite H1 in o_caller0. sauto.
+econstructor. auto. auto. Qed.
 
-  prove impure. 
-
- (* sauto.
-inversion o_caller. subst. inversion o_caller0. subst. constructor.
-apply Eqdep.EqdepTheory.inj_pair2 in H3. sauto. *)
-Qed. (* TODO *)
-
-  (* This leaves us with one goal to prove:
-
-       [sel d ω = false -> sel (co d) ω = false]
-
-     Yet, thanks to our call to [IsOpen d], we can predict that
-
-       [sel d ω = true] *)
-
-  inversion o_caller0. ssubst.
-  now rewrite H1.
-Qed.
 
 #[global] Hint Resolve close_door_respectful : airlock.
 
@@ -246,9 +353,9 @@ Lemma open_door_respectful `{Provide ix DOORS} (ω : Ω)
   : pre (to_hoare doors_contract (open_door (ix := ix) d)) ω.
 
 Proof.
-  prove impure; repeat constructor; subst.
-  inversion o_caller0; ssubst.
-  now rewrite safe.
+  prove impure. 
+  - sauto.
+  - sauto.
 Qed.
 
 #[global] Hint Resolve open_door_respectful : airlock.
@@ -258,12 +365,14 @@ Lemma close_door_run `{Provide ix DOORS} (ω : Ω) (d : door) (ω' : Ω) (x : un
   : sel d ω' = false.
 
 Proof.
-  unroll_post run. Show 2. (* unroll_post -> tous les chemins d'exécution possibles pour arriver à la conclusion
+  unroll_post run. (* unroll_post -> tous les chemins d'exécution possibles pour arriver à la conclusion
 et retrouve les callee obligations que l'on a à ce moment *)
-  + rewrite tog_equ_1.
-    inversion H1; ssubst.
-    now rewrite H5.
-  + now inversion H1; ssubst. (* note: ici on peut faire clear H0. clear H. *)
+  + (* sauto dep:on. *) rewrite tog_equ_1. pose proof (p := equivalence'). edestruct p.
+  rewrite H3 in H1. rewrite H4 in H2. sauto.
+  +  pose proof (p := equivalence'). edestruct p. rewrite H2 in H1.
+sauto.
+
+ (* note: ici on peut faire clear H0. clear H. *)
 Qed.
 
 #[global] Hint Resolve close_door_run : airlock.
@@ -395,7 +504,7 @@ Lemma controller_correct `{StrictProvide2 ix DOORS (STORE nat)}
 Proof.
   intros ωc ωd pred a e req.
   assert (hpre : pre (to_hoare doors_contract (controller a e)) ωd).
-    (destruct e; prove impure). 
+    (destruct e; prove impure)
 
 
 Focus 5.  Set Printing All. Check @controller. Check component. Check @to_hoare.
