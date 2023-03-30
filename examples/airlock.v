@@ -256,20 +256,27 @@ Inductive doors_o_callee : Ω -> forall (a : Type), DOORS a -> a -> Prop :=
   : doors_o_callee ω unit (Toggle d) x.
 
 Inductive doors_o_callee' : Ω -> DOORS' -> (bool*unit) -> Prop :=
-| doors_o_callee_is_open' (d : door) (ω : Ω) (y : bool*unit) (x : bool) (H : x = true) (equ : sel d ω = fst y)
+| doors_o_callee_is_open' (d : door) (ω : Ω) (y : bool*unit) (equ : sel d ω = fst y)
   : doors_o_callee' ω (IsOpen' true d eq_refl) y
-| doors_o_callee_toggle' (d : door) (ω : Ω) (y : bool*unit) (x : bool) (H : x = false)
-  : doors_o_callee' ω (Toggle' false d eq_refl) y.
+| doors_o_callee_toggle' (d : door) (ω : Ω) (y : bool*unit)
+  : doors_o_callee' ω (Toggle' false d eq_refl) y. 
+
 
 Definition doors_o_callee'_dec (ω : Ω) (d : DOORS') (p : bool*unit) : bool := 
 match d with
-| IsOpen' b d H => match p with
-                   | (true, false) => 
-| Toggle' b d H => match b with
-                    | true => if true then false else false
-                    | false => if negb (sel d ω) then (negb (sel (co d) ω)) else true
-                    end
+| IsOpen' b d H => fst p <---> sel d ω
+| Toggle' b d H => true
 end.
+
+Lemma callee_dec ω d p : doors_o_callee' ω d p <-> doors_o_callee'_dec ω d p = true.
+Proof.
+split; intro H; destruct d.
+  - simpl. inversion H. subst. generalize dependent (fst p). generalize dependent (sel d ω).
+sauto lq:on.
+  -  subst.  subst. generalize dependent (fst p). generalize dependent (sel d ω).
+sauto lq:on.
+  - subst. sauto lq:on. 
+  - subst. sauto lq:on. Qed.
 
 Definition transfo_hyp {A : Type} (H: A = bool) :=
 match H with
