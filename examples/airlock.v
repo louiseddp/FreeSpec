@@ -10,8 +10,6 @@ Add Rec LoadPath "/home/louise/github.com/louiseddp/sniper" as Sniper.
 From Sniper Require Import Sniper.
 From Hammer Require Import Hammer.
 
-Require Import Coq.Program.Equality.
-
 #[local] Open Scope nat_scope.
 
 Create HintDb airlock.
@@ -29,9 +27,15 @@ Inductive DOORS : interface :=
 | IsOpen : door -> DOORS bool
 | Toggle : door -> DOORS unit.
 
+Inductive bool_tag := 
+bool_tag0.
+
+Inductive unit_tag :=
+unit_tag0.
+
 Inductive DOORS' : Type :=
-| IsOpen' b (d : door) : b = true -> DOORS'
-| Toggle' b (d : door) : b = false -> DOORS'.
+| IsOpen' (t : bool_tag) (d : door) : DOORS'
+| Toggle' (t : unit_tag) (d : door) : DOORS'.
 
 Inductive DOORS'' : bool -> Type :=
 | IsOpen'' (d : door) : DOORS'' true
@@ -171,32 +175,26 @@ Inductive doors_o_caller' : Ω -> DOORS' -> Prop :=
       state of [d]. *)
 
 | req_is_open' (d : door) (ω : Ω)
-  : doors_o_caller' ω (IsOpen' true d eq_refl)
+  : doors_o_caller' ω (IsOpen' bool_tag0 d)
 
 (** - Given the door [d] of o system [ω], if [d] is closed, then the second door
       [co d] has to be closed too for a request to toggle [d] to be valid. *)
 
 | req_toggle' (d : door) (ω : Ω) (H : sel d ω = false -> sel (co d) ω = false)
-  : doors_o_caller' ω (Toggle' false d eq_refl).
+  : doors_o_caller' ω (Toggle' unit_tag0 d).
 
 Print implb.
 
 Definition doors_o_caller_dec (ω : Ω) (d : DOORS') : bool := 
 match d with
-| IsOpen' b d H => match b with
-                    | true => true
-                    | false => false
-                    end
-| Toggle' b d H => match b with
-                    | true => if true then false else false
-                    | false => if negb (sel d ω) then (negb (sel (co d) ω)) else true
-                    end
+| IsOpen' _ d => true
+| Toggle' _ d =>  if negb (sel d ω) then (negb (sel (co d) ω)) else true
 end.
 
 Definition transfo {A : Type} (t: DOORS A) :=
 match t with
-| IsOpen d => IsOpen' true d eq_refl
-| Toggle d => Toggle' false d eq_refl
+| IsOpen d => IsOpen' bool_tag0 d
+| Toggle d => Toggle' unit_tag0 d
 end.
 
 Lemma equivalence A (ω : Ω) (d : DOORS A) :
@@ -212,11 +210,11 @@ Proof. split.
 Lemma caller_dec ω d : doors_o_caller' ω d <-> doors_o_caller_dec ω d = true.
 Proof.
 split; intro H; destruct d.
-  - simpl. dependent destruction e. reflexivity.
-  - simpl. dependent destruction e. inversion H. destruct (sel d ω) eqn:E.
+  - simpl. reflexivity.
+  - simpl. inversion H. destruct (sel d ω) eqn:E.
 simpl. reflexivity. simpl. destruct ((sel (co d) ω)). firstorder. firstorder.
-  - subst. constructor.
-  - subst. constructor. simpl in H.  intros. destruct (negb (sel d ω)) eqn:E.
+  - subst. destruct t; econstructor.
+  - subst. destruct t; constructor. simpl in H.  intros. destruct (negb (sel d ω)) eqn:E.
     + rewrite <- Bool.negb_involutive in H. simpl in H. 
 generalize dependent (sel (co d) ω). intros. sauto lq:on.
     + generalize dependent (sel d ω). intros. sauto lq:on. Qed.
@@ -257,15 +255,15 @@ Inductive doors_o_callee : Ω -> forall (a : Type), DOORS a -> a -> Prop :=
 
 Inductive doors_o_callee' : Ω -> DOORS' -> (bool*unit) -> Prop :=
 | doors_o_callee_is_open' (d : door) (ω : Ω) (y : bool*unit) (equ : sel d ω = fst y)
-  : doors_o_callee' ω (IsOpen' true d eq_refl) y
+  : doors_o_callee' ω (IsOpen' bool_tag0 d) y
 | doors_o_callee_toggle' (d : door) (ω : Ω) (y : bool*unit)
-  : doors_o_callee' ω (Toggle' false d eq_refl) y. 
+  : doors_o_callee' ω (Toggle' unit_tag0 d) y. 
 
 
 Definition doors_o_callee'_dec (ω : Ω) (d : DOORS') (p : bool*unit) : bool := 
 match d with
-| IsOpen' b d H => fst p <---> sel d ω
-| Toggle' b d H => true
+| IsOpen' b d => fst p <---> sel d ω
+| Toggle' b d => true
 end.
 
 Lemma callee_dec ω d p : doors_o_callee' ω d p <-> doors_o_callee'_dec ω d p = true.
@@ -277,11 +275,6 @@ sauto lq:on.
 sauto lq:on.
   - subst. sauto lq:on. 
   - subst. sauto lq:on. Qed.
-
-Definition transfo_hyp {A : Type} (H: A = bool) :=
-match H with
-| eq_refl => bool
-end. 
 
 Lemma two_elem : ~ (@eq Type unit bool).
 Proof.
@@ -295,14 +288,17 @@ intro Helim2. inversion Helim2.
 assert (H3 : forall (x y : bool), x = y).
 intros x y. Admitted. 
 
+
+Require Import Coq.Program.Equality.
+
 Lemma equivalence' (b : bool) (c: unit) (ω : Ω) :
 (forall (d : DOORS bool), doors_o_callee ω bool d b <-> doors_o_callee' ω (transfo d) (b, c))
 /\ 
 (forall (d : DOORS unit), doors_o_callee ω unit d c <-> doors_o_callee' ω (transfo d) (b, c)).
 Proof. split. split.
   + dependent destruction d.
-      - simpl. intros. inversion H. ssubst. econstructor 1. reflexivity. simpl.
-apply Eqdep.EqdepTheory.inj_pair2 in H2. assumption.
+      - simpl. intros. inversion H. econstructor 1. ssubst.
+apply Eqdep.EqdepTheory.inj_pair2 in H2. simpl; assumption.
       - intros. inversion H. assert (Hfalse : False). apply two_elem. assumption.  inversion Hfalse.
 assert (Hfalse : False). apply two_elem. assumption.  inversion Hfalse.
   +  dependent destruction d.
@@ -311,7 +307,7 @@ assert (Hfalse : False). apply two_elem. assumption.  inversion Hfalse.
   + split. dependent destruction d; intro H; simpl in *.
     * 
 assert (Hfalse : False). apply two_elem. symmetry. assumption. inversion Hfalse.
-    * econstructor. reflexivity.  
+    * econstructor.  
     * intro H. dependent destruction d. assert (Hfalse : False). apply two_elem. symmetry. assumption. inversion Hfalse.
     simpl in H. inversion H. subst. constructor. 
   Qed.
@@ -341,16 +337,25 @@ Definition doors_contract : contract DOORS Ω :=
 
 (** Closing a door [d] in any system [ω] is always a respectful operation. *)
 
+Definition foo := (prod_types, MayProvide, Provide, interface).
+
 Lemma close_door_respectful `{Provide ix DOORS} (ω : Ω) (d : door)
   : pre (to_hoare doors_contract (close_door d)) ω.
 
 Proof.
   (* We use the [prove_program] tactics to erase the program monad *)
-prove impure. 
-sauto. apply equivalence. econstructor. exact d. exact (eq_refl).
+prove impure.
+sauto. apply equivalence. 
 apply equivalence in o_caller. pose proof (p := equivalence').
-edestruct p. rewrite H1 in o_caller0. sauto.
-econstructor. auto. auto. Qed.
+edestruct p.  rewrite H1 in o_caller0. sauto.
+
+(* apply equivalence; simpl.
+apply caller_dec. scope. destruct x3 ; destruct x4; auto.
+destruct x ; destruct x0; auto. destruct x ; destruct x0; auto.
+- clear H3 H4 H H0 gen_MayProvide0 gen_MayProvide4 gen_MayProvide6 gen_MayProvide5 gen_MayProvide3 gen_MayProvide2 gen_MayProvide1 proj_MayProvide
+H8 H5 H6 H11 H9. 
+snipe. *)
+Qed.
 
 
 #[global] Hint Resolve close_door_respectful : airlock.
